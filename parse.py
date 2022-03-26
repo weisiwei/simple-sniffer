@@ -52,21 +52,41 @@ def parseAppLayer(buf):
 	
 	if isinstance(pkt, dpkt.http.Request):
 		print('HTTP Request: ', pkt.method, pkt.version, pkt.uri)
+		dct = {'type': 'Request',
+				'method': pkt.method,
+				'version': pkt.version,
+				'uri': pkt.uri
+				}
 		for hd, ctt in pkt.headers.items():
 			print(hd, ctt)
+			dct[hd] = ctt
+		return ('', '', 'HTTP', 'Request ' + pkt.method + ' ' + pkt.uri, dct)
 	elif isinstance(pkt, dpkt.http.Response):
 		print('HTTP Response: ', pkt.status, pkt.reason, pkt.version)
+		dct = {'type': 'Response',
+				'status': str(pkt.status),
+				'reason': pkt.reason,
+				'version': pkt.version
+				}
 		for hd, ctt in pkt.headers.items():
 			print(hd, ctt)
+			dct[hd] = ctt
 		print(pkt.body)
+		return ('', '', 'HTTP', 'Response ' + str(pkt.status) + ' ' + pkt.reason, dct)
 	elif isinstance(pkt, dpkt.dhcp.DHCP):
+		dct = {}
 		print('DHCP:', pkt.xid, end = ' ')
 		pktType = 'Request' if pkt.op else 'Response'
 		castType = 'BroadCast' if pkt.flags else 'UniCast'
-			
+		
+		dct['xid'] = pkt.xid
+		dct['type'] = pktType
+		dct['cast'] = castType
+		
 		print(pktType, castType)
 		if not pkt.op:
-			print('Allocated IP:', inet_to_str(yiaddr))
+			print('Allocated IP:', inet_to_str(pkt.yiaddr))
+			dct['Allocated IP'] = inet_to_str(pkt.yiaddr)
 		
 		packetTypes = {
 			b'\x01': 'Discover',
@@ -78,13 +98,17 @@ def parseAppLayer(buf):
 			b'\x07': 'Release',
 			b'\x08': 'Inform',
 		}
-		for code, ctt in pkt.opts:
+		for i, (code, ctt) in enumerate(pkt.opts):
 			if code == 53:
 				print('Packet Type:', packetTypes[ctt])
+				dct['Packet Type'] = packetTypes[ctt]
 			elif code == 12:
 				print('Host Name:', ctt)
+				dct['Host Name:'] = str(ctt)
 			elif code == 50:
 				print('Requeseted IP:', inet_to_str(ctt))
+				dct['Requeseted IP'] = inet_to_str(ctt)
+		return ('', '', 'DHCP', pktType + ' ' + castType, dct)
 	elif isinstance(pkt, dpkt.ssl.TLS):
 		tlsTypes = {
 			20: 'Change Cipher Spec',
@@ -93,42 +117,70 @@ def parseAppLayer(buf):
 			23: 'Application Data'
 		}
 		
+		dct = {}
+		
 		if pkt.type in tlsTypes:
 			tlsType = tlsTypes[pkt.type]
 		else:
 			tlsType = 'unknown'
+		dct['type'] = tlsType
+		dct['len'] = str(pkt.len)
+		
 		print('TLS:', pkt.len, tlsType)
-		for rcd in pkt.records:
+		for i, rcd in enumerate(pkt.records):
+			info = ''
+			
 			if rcd.type in tlsTypes:
 				rcdType = tlsTypes[pkt.type]
 			else:
 				rcdType = 'unknown'
+			info += ' type: ' + rcdType
+			info += ' length: ' + str(rcd.length)
 			
 			print('TLSRecord: ', rcdType, rcd.length, end = ' ')
 			if rcd.compressed:
 				print('Compressed', end = '')
+				info += ' Compressed '
 			if rcd.encrypted:
 				print('Encrypted', end = '')
+				info += ' Encrypted '
 			print()
+			
+			dct['TLSRecord' + str(i)] = info
+		
+		dct['data'] = buf
+		return ('', '', 'TLS', tlsType, dct)
 	elif isinstance(pkt, dpkt.dns.DNS):
 		#printAttr(pkt)
 		dnsType = 'Query' if not pkt.qr else 'Response'
 		print('DNS: ', dnsType)
+		dct = {'type': dnsType}
+		
 		if not pkt.qr:
-			for qd in pkt.qd:
+			for i, qd in enumerate(pkt.qd):
 				print(qd.name)
+				dct['query' + str(i)] = qd.name
 		else:
-			for an in pkt.an:
+			for i, an in enumerate(pkt.an):
 				#print(an)
+				info = ''
 				if hasattr(an, 'name'):
 					print(an.name, end = ' ')
+					info += ' name: ' + an.name
 				if hasattr(an, 'cname'):
 					print(an.cname, end = ' ')
+					info += ' cname: ' + an.cname
 				if hasattr(an, 'ip'):
 					print(inet_to_str(an.ip), end = ' ')
+					info += ' ip: ' + inet_to_str(an.ip)
 				if hasattr(an, 'ip6'):
 					print(inet_to_str(an.ip6), end = ' ')
+					info += ' ip6: ' + inet_to_str(an.ip6)
 				print()
+				
+				dct['response' + str(i)] = info
+		dct['data'] = buf
+		return ('', '', 'DNS', dnsType, dct)
 	elif isinstance(pkt, dpkt.icmp.ICMP):
 		icmpTypes = {
 			0: 'Echo Reply',
@@ -139,15 +191,19 @@ def parseAppLayer(buf):
 			13: 'TimeStamp Request',
 			14: 'TimeStamp Response'
 		}
-		if pkt.type in icmpv6Types:
+		if pkt.type in icmpTypes:
 			icmpType = icmpTypes[pkt.type]
 		else:
 			icmpType = 'unknown'
 		print('ICMP: ', icmpType , pkt.code)
+		
+		return ('', '', 'ICMP', 'type: ' + icmpType + ' ' + 'code: ' + str(pkt.code), 
+				{'type': icmpType,
+				'code': str(pkt.code),
+				'data': buf.hex()
+				})
 	else:
-		pass
-		#input()
-	return None
+		return None
 def parseTransLayer(data):
 	if isinstance(data, dpkt.tcp.TCP):
 		print('TCP: ', data.sport, ' -> ', data.dport, data.seq, len(data.data))
@@ -160,13 +216,15 @@ def parseTransLayer(data):
 		info = ''
 		if SYN and not ACK:
 			print('Three-way Handshake: Connect 1: SYN',  data.seq)
-			info += 'Three-way Handshake: Connect 1: SYN'
+			info += 'Three-way Handshake: Connect 1: SYN ' + 'seq=' + str(data.seq) + ' '
 		elif SYN and ACK:
 			print('Three-way Handshake: Connect 2: SYN ', data.seq, 'ACK', data.ack)
-			info += 'Three-way Handshake: Connect 2: SYN ACK'
+			info += 'Three-way Handshake: Connect 2: SYN ACK ' + 'seq=' + str(data.seq) + ' ack=' + str(data.ack) + ' '
 		elif ACK:
 			print('ACK', data.ack)
-			info += 'ACK, '
+			info += 'ACK ' + 'ack=' + str(data.ack) + ' '
+		else:
+			info += 'seq=' + str(data.seq) + ' ack=' + str(data.ack) + ' '
 		if FIN:
 			print('disconnect', data.seq)
 			info += 'disconnect, '
@@ -219,9 +277,9 @@ def parseTransLayer(data):
 			143: 'Multicast Listener Discovery'
 		}
 		print('ICMPv6:', icmpv6Types[data.type], data.code)
-		TransLayer = ('', '', 'ICMPv6', icmpv6Types[data.type] + ' ' + data.code,
+		TransLayer = ('', '', 'ICMPv6', icmpv6Types[data.type] + ' ' + str(data.code),
 					{'type': icmpv6Types[data.type],
-					'code': data.code,
+					'code': str(data.code),
 					'data': data.__bytes__().hex()
 					})
 		return TransLayer, None
@@ -230,9 +288,13 @@ def parseTransLayer(data):
 			17: 'Membership Query',
 			34: 'Membership Report'
 		}
-		print('IGMP: ', igmpTypes[data.type], inet_to_str(data.group))
-		TransLayer = ('', '', 'IGMP', igmpTypes[data.type] + ' ' + inet_to_str(data.group),
-					{'type': igmpTypes[data.type],
+		if data.type in igmpTypes:
+			igmpType = igmpTypes[data.type]
+		else:
+			igmpType = ''
+		print('IGMP: ', igmpType, inet_to_str(data.group))
+		TransLayer = ('', '', 'IGMP', igmpType+ ' ' + inet_to_str(data.group),
+					{'type': igmpType,
 					'group': inet_to_str(data.group),
 					'data': data.__bytes__().hex()
 					})
