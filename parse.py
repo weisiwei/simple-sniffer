@@ -60,6 +60,7 @@ def parseAppLayer(buf):
 		for hd, ctt in pkt.headers.items():
 			print(hd, ctt)
 			dct[hd] = ctt
+		dct['data'] = buf.hex()
 		return ('', '', 'HTTP', 'Request ' + pkt.method + ' ' + pkt.uri, dct)
 	elif isinstance(pkt, dpkt.http.Response):
 		print('HTTP Response: ', pkt.status, pkt.reason, pkt.version)
@@ -72,6 +73,7 @@ def parseAppLayer(buf):
 			print(hd, ctt)
 			dct[hd] = ctt
 		print(pkt.body)
+		dct['data'] = buf.hex()
 		return ('', '', 'HTTP', 'Response ' + str(pkt.status) + ' ' + pkt.reason, dct)
 	elif isinstance(pkt, dpkt.dhcp.DHCP):
 		dct = {}
@@ -108,6 +110,7 @@ def parseAppLayer(buf):
 			elif code == 50:
 				print('Requeseted IP:', inet_to_str(ctt))
 				dct['Requeseted IP'] = inet_to_str(ctt)
+		dct['data'] = buf.hex()
 		return ('', '', 'DHCP', pktType + ' ' + castType, dct)
 	elif isinstance(pkt, dpkt.ssl.TLS):
 		tlsTypes = {
@@ -148,7 +151,7 @@ def parseAppLayer(buf):
 			
 			dct['TLSRecord' + str(i)] = info
 		
-		dct['data'] = buf
+		dct['data'] = buf.hex()
 		return ('', '', 'TLS', tlsType, dct)
 	elif isinstance(pkt, dpkt.dns.DNS):
 		#printAttr(pkt)
@@ -179,7 +182,7 @@ def parseAppLayer(buf):
 				print()
 				
 				dct['response' + str(i)] = info
-		dct['data'] = buf
+		dct['data'] = buf.hex()
 		return ('', '', 'DNS', dnsType, dct)
 	elif isinstance(pkt, dpkt.icmp.ICMP):
 		icmpTypes = {
@@ -236,8 +239,8 @@ def parseTransLayer(data):
 			AppLayer = None
 		
 		TransLayer = (str(data.dport), str(data.sport), 'TCP', info,
-					{'sport': data.sport,
-					'dport': data.dport,
+					{'sport': str(data.sport),
+					'dport': str(data.dport),
 					'len': str(len(data.data)),
 					'seqno': str(data.seq),
 					'ackno': str(data.ack),
@@ -247,7 +250,6 @@ def parseTransLayer(data):
 					'data': data.__bytes__().hex()
 					})
 		return TransLayer, AppLayer
-		
 	elif isinstance(data, dpkt.udp.UDP):
 		print('UDP: ', data.sport, ' -> ', data.dport)
 		print(data.ulen)
@@ -256,8 +258,8 @@ def parseTransLayer(data):
 		else:
 			AppLayer = None
 		TransLayer = (str(data.dport), str(data.sport), 'UDP', '',
-					{'sport': data.sport,
-					'dport': data.dport,
+					{'sport': str(data.sport),
+					'dport': str(data.dport),
 					'len': str(data.ulen),
 					'data': data.__bytes__().hex()
 					})
@@ -276,9 +278,13 @@ def parseTransLayer(data):
 			136: 'Neighbor Advertisement',
 			143: 'Multicast Listener Discovery'
 		}
-		print('ICMPv6:', icmpv6Types[data.type], data.code)
-		TransLayer = ('', '', 'ICMPv6', icmpv6Types[data.type] + ' ' + str(data.code),
-					{'type': icmpv6Types[data.type],
+		if data.type in icmpv6Types:
+			icmpv6Type = icmpv6Types[data.type]
+		else:
+			icmpv6Type = ''
+		print('ICMPv6:', icmpv6Type, data.code)
+		TransLayer = ('', '', 'ICMPv6', icmpv6Type + ' ' + str(data.code),
+					{'type': icmpv6Type,
 					'code': str(data.code),
 					'data': data.__bytes__().hex()
 					})
