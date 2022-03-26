@@ -1,23 +1,14 @@
 from winpcapy import WinPcapUtils
 from winpcapy import WinPcapDevices
 from winpcapy import WinPcap
-import dpkt
-from dpkt.compat import compat_ord
-import socket
-
-def mac_addr(address):
-    return ':'.join('%02x' % compat_ord(b) for b in address)
-def inet_to_str(inet):
-    try:
-        return socket.inet_ntop(socket.AF_INET, inet)
-    except ValueError:
-        return socket.inet_ntop(socket.AF_INET6, inet)
 
 import sys
 from PyQt5.QtWidgets import (QApplication, QWidget, QMainWindow, 
 	QComboBox, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, 
 	QGridLayout)
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
+
+from parse import parsePkt
 
 class Worker(QObject):
 	finished = pyqtSignal()
@@ -56,7 +47,7 @@ class SnifferUI(QWidget):#QMainWindow):
 		packageTable.setRowCount(0)
 		packageTable.setColumnCount(4)
 		
-		packageTable.setHorizontalHeaderLabels(['srcAddr', 'dstAddr', 'type', 'content'])
+		packageTable.setHorizontalHeaderLabels(['srcAddr', 'dstAddr', 'type', 'info'])
 		packageTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 		packageTable.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
 		packageTable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -84,49 +75,21 @@ class SnifferUI(QWidget):#QMainWindow):
 		self.setGeometry(150, 150, 1000, 500)
 		self.setWindowTitle('Sniffer')
 		self.show()
-	def addPacket(self, src, dst, type, content):
+	def addPacket(self, pkt):
+		src, dst, type, info = pkt[0], pkt[1], pkt[2], pkt[3]
 		rowCnt = self.packageTable.rowCount()
 		self.packageTable.insertRow(rowCnt)
 	
 		self.packageTable.setItem(rowCnt, 0, QTableWidgetItem(src))
 		self.packageTable.setItem(rowCnt, 1, QTableWidgetItem(dst))
 		self.packageTable.setItem(rowCnt, 2, QTableWidgetItem(type))
-		self.packageTable.setItem(rowCnt, 3, QTableWidgetItem(content.hex()))
+		self.packageTable.setItem(rowCnt, 3, QTableWidgetItem(info))
 		
 	def receivePacket(self, pkt_data):
-		print(pkt_data)
-		eth = dpkt.ethernet.Ethernet(pkt_data)
-		srcMac = mac_addr(eth.src)
-		dstMac = mac_addr(eth.dst)
-		type = 'Ethernet'
-		content = pkt_data
-		self.addPacket(srcMac, dstMac, type, content)
-		
-		if isinstance(eth.data, dpkt.ip.IP):
-			ip = eth.data
-			srcIp = inet_to_str(ip.src)
-			dstIp = inet_to_str(ip.dst)
-			type = 'IP'
-			content = ip.__bytes__()
-			print(dir(ip))
-			self.addPacket(srcIp, dstIp, type, content)
-		else:
-			type = eth.data.__class__.__name__
-			content = eth.data
-			self.addPacket(srcMac, dstMac, type, content)
-			'''curp = ip
-			while hasattr(curp, 'data'):
-				print(curp.data.__class__.__name__)
-				print(curp.data)
-				curp = curp.data
-				if curp.__class__.__name__ == 'bytes':
-					try:
-						request = dpkt.http.Request(curp)
-						print('HTTP')
-						print(request)
-					except (dpkt.dpkt.NeedData, dpkt.dpkt.UnpackError):
-						pass
-			'''
+		layers = parsePkt(pkt_data)
+		for layer in layers:
+			if layer:
+				self.addPacket(layer)
 	def buttonClicked(self):
 		if self.on:
 			self.on = False
