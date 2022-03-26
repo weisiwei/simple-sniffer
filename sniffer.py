@@ -30,6 +30,7 @@ class SnifferUI(QWidget):#QMainWindow):
 		super().__init__()
 		self.deviceList = list(deviceList.items())
 		self.on = False
+		self.pktCnt = 0
 		self.initUI()
 	def initDeviceSelector(self):
 		deviceSelector = QComboBox()
@@ -45,13 +46,16 @@ class SnifferUI(QWidget):#QMainWindow):
 	def initPackageTable(self):
 		packageTable = QTableWidget()
 		packageTable.setRowCount(0)
-		packageTable.setColumnCount(4)
+		packageTable.setColumnCount(5)
 		
-		packageTable.setHorizontalHeaderLabels(['srcAddr', 'dstAddr', 'type', 'info'])
+		packageTable.setHorizontalHeaderLabels(['id', 'srcAddr', 'dstAddr', 'type', 'info'])
 		packageTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 		packageTable.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
 		packageTable.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
 		packageTable.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+		packageTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+		packageTable.verticalHeader().setHidden(True)
+
 		packageTable.resize(packageTable.sizeHint())
 		packageTable.setGeometry(0, 150, 1000, 400)
 		
@@ -75,23 +79,32 @@ class SnifferUI(QWidget):#QMainWindow):
 		self.setGeometry(150, 150, 1000, 500)
 		self.setWindowTitle('Sniffer')
 		self.show()
-	def addPacket(self, pkt):
-		src, dst, type, info = pkt[0], pkt[1], pkt[2], pkt[3]
-		rowCnt = self.packageTable.rowCount()
-		self.packageTable.insertRow(rowCnt)
-	
-		self.packageTable.setItem(rowCnt, 0, QTableWidgetItem(src))
-		self.packageTable.setItem(rowCnt, 1, QTableWidgetItem(dst))
-		self.packageTable.setItem(rowCnt, 2, QTableWidgetItem(type))
-		self.packageTable.setItem(rowCnt, 3, QTableWidgetItem(info))
+	def addPacket(self, layers):
+		self.pktCnt += 1
+		curRow = self.packageTable.rowCount()
+		nLayer = 0
+		for pkt in layers:
+			if pkt:
+				src, dst, type, info = pkt[0], pkt[1], pkt[2], pkt[3]
+				rowCnt = self.packageTable.rowCount()
+				self.packageTable.insertRow(rowCnt)
+			
+				self.packageTable.setItem(rowCnt, 1, QTableWidgetItem(src))
+				self.packageTable.setItem(rowCnt, 2, QTableWidgetItem(dst))
+				self.packageTable.setItem(rowCnt, 3, QTableWidgetItem(type))
+				self.packageTable.setItem(rowCnt, 4, QTableWidgetItem(info))
+				
+				nLayer += 1
 		
+		self.packageTable.setSpan(curRow, 0, nLayer, 1);
+		self.packageTable.setItem(curRow, 0, QTableWidgetItem(str(self.pktCnt)))
+	
 	def receivePacket(self, pkt_data):
 		layers = parsePkt(pkt_data)
-		for layer in layers:
-			if layer:
-				self.addPacket(layer)
+		self.addPacket(layers)
 	def buttonClicked(self):
 		if self.on:
+			#stop sniff
 			self.on = False
 			self.startButton.setText('Start')
 			self.deviceSelector.setEnabled(True)
@@ -101,7 +114,9 @@ class SnifferUI(QWidget):#QMainWindow):
 			self.worker.deleteLater()
 			self.thread.deleteLater()
 		else:
+			#start sniff
 			self.on = True
+			self.pktCnt = 0
 			self.startButton.setText('Stop')
 			self.packageTable.setRowCount(0)
 			self.deviceSelector.setEnabled(False)
@@ -121,34 +136,11 @@ class SnifferUI(QWidget):#QMainWindow):
 		
 		self.thread.started.connect(self.worker.run)
 		self.worker.received.connect(self.receivePacket)
-		#self.worker.finished.connect(self.thread.quit)
-		#self.worker.finished.connect(self.worker.deleteLater)
-		#self.thread.finished.connect(self.thread.deleteLater)
-		#self.worker.progress.connect(self.reportProgress)
-		# Step 6: Start the thread
+		
 		self.thread.start()
-
-        # Final resets
-		self.thread.finished.connect(
-            lambda: self.startButton.setEnabled(True)
-        )
 		
 if __name__ == '__main__':
 	app = QApplication([])
 	deviceList = WinPcapDevices.list_devices()
 	mainWD = SnifferUI(deviceList)
 	sys.exit(app.exec_())
-	
-	'''deviceList = WinPcapDevices.list_devices()
-	
-	deviceList = list(deviceList.items())
-		
-	for i in deviceList:
-		print(i)
-	
-	idx = 4
-	currentDevice = deviceList[idx][0]
-	print(currentDevice)
-	#currentDevice = '\\Dvice\\NPF_{E3CB3C30-7976-4A08-90AC-656FDF499F1C}'
-	with WinPcap(currentDevice) as win_pcap:
-		win_pcap.run(callback=packet_callback)'''
