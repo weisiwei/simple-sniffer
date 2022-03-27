@@ -1,10 +1,12 @@
 from winpcapy import WinPcapUtils
 from winpcapy import WinPcapDevices
 from winpcapy import WinPcap
+import dpkt
 
 import sys
 from PyQt5.QtWidgets import (QApplication, QWidget, QMainWindow, 
-	QComboBox, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QTextEdit,
+	QComboBox, QPushButton, QHeaderView, QLabel, QTextEdit, QLineEdit,
+	QTableWidget, QTableWidgetItem,
 	QGridLayout)
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
@@ -19,13 +21,14 @@ class Worker(QObject):
 		self.pcapFile = pcapFile
 		self.win_pcap = None
 	def run(self):
-		if pcapFile:
+		if self.pcapFile:
 			try:
-				pcap = dpkt.pcap.Reader(open(pcapFile, 'rb'))
+				pcap = dpkt.pcap.Reader(open(self.pcapFile, 'rb'))
 				for t, buf in pcap:
 					self.received.emit(buf)
 			except Exception:
 				pass
+			self.finished.emit()
 		else:
 			with WinPcap(self.deviceName) as capture:
 				self.win_pcap = capture
@@ -52,16 +55,16 @@ class SnifferUI(QWidget):#QMainWindow):
 		deviceSelector = QComboBox()
 		for name, desciption in self.deviceList:
 			deviceSelector.addItem(desciption)
-		deviceSelector.resize(deviceSelector.sizeHint())
+		#deviceSelector.resize(deviceSelector.sizeHint())
 		self.deviceSelector = deviceSelector
 	def initStartButton(self):
 		startButton = QPushButton('Start')
 		startButton.clicked.connect(self.buttonClicked)#(self.startSniff)
-		startButton.resize(startButton.sizeHint())
+		#startButton.resize(startButton.sizeHint())
 		self.startButton = startButton
 	def initDetailedInfo(self):
 		detailedInfo = QTextEdit('')#QLabel('')
-		detailedInfo.resize(detailedInfo.sizeHint())
+		#detailedInfo.resize(detailedInfo.sizeHint())
 		#detailedInfo.setWordWrap(True)
 		self.detailedInfo = detailedInfo
 	def initPackageTable(self):
@@ -77,17 +80,22 @@ class SnifferUI(QWidget):#QMainWindow):
 		packageTable.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
 		packageTable.verticalHeader().setHidden(True)
 
-		packageTable.resize(packageTable.sizeHint())
+		#packageTable.resize(packageTable.sizeHint())
 		packageTable.setGeometry(0, 150, 1000, 400)
 		
 		packageTable.itemClicked.connect(self.printDetailedInfo)
 		
 		self.packageTable = packageTable
+	def initFileInput(self):
+		fileInput = QLineEdit('')
+		#fileInput.resize(fileInput.sizeHint())
+		self.fileInput = fileInput
 	def initLayout(self):
 		layout = QGridLayout()
 		layout.setSpacing(10)
 		
-		layout.addWidget(self.deviceSelector, 1, 1, 1, 4)
+		layout.addWidget(self.deviceSelector, 1, 1, 1, 3)
+		layout.addWidget(self.fileInput, 1, 4, 1, 1)
 		layout.addWidget(self.startButton, 1, 0, 1, 1)
 		layout.addWidget(self.packageTable, 3, 0, 5, 3)
 		layout.addWidget(self.detailedInfo, 3, 3, 5, 3)
@@ -99,6 +107,7 @@ class SnifferUI(QWidget):#QMainWindow):
 		self.initDeviceSelector()
 		self.initStartButton()
 		self.initDetailedInfo()
+		self.initFileInput()
 		self.initPackageTable()
 		self.initLayout()
 
@@ -152,6 +161,7 @@ class SnifferUI(QWidget):#QMainWindow):
 			self.on = False
 			self.startButton.setText('Start')
 			self.deviceSelector.setEnabled(True)
+			self.fileInput.setReadOnly(False)
 			self.worker.stop()
 			self.thread.quit()
 			self.thread.wait()
@@ -164,6 +174,7 @@ class SnifferUI(QWidget):#QMainWindow):
 			self.startButton.setText('Stop')
 			self.packageTable.setRowCount(0)
 			self.deviceSelector.setEnabled(False)
+			self.fileInput.setReadOnly(True)
 			self.startSniff()
 	
 	def startSniff(self):
@@ -174,17 +185,22 @@ class SnifferUI(QWidget):#QMainWindow):
 		print(currentDevice)
 		
 		self.thread = QThread()
-		self.worker = Worker(currentDevice)
+		
+		self.inputFile = self.fileInput.text()
+		if len(self.inputFile) == 0:
+			self.inputFile = None
+		
+		self.worker = Worker(currentDevice, self.inputFile)
 		
 		self.worker.moveToThread(self.thread)
 		
 		self.thread.started.connect(self.worker.run)
 		self.worker.received.connect(self.receivePacket)
 		
-		self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-		self.thread.finished.connect(self.buttonClicked)
+		self.worker.finished.connect(self.buttonClicked)
+		#self.worker.finished.connect(self.thread.quit)
+		#self.worker.finished.connect(self.worker.deleteLater)
+		#self.thread.finished.connect(self.thread.deleteLater)
 		
 		self.thread.start()
 		
