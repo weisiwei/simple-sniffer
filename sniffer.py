@@ -15,10 +15,14 @@ from parse import parsePkt
 class Worker(QObject):
 	finished = pyqtSignal()
 	received = pyqtSignal(bytes)
-	def __init__(self, deviceName, pcapFile=None):
+	def __init__(self, deviceName, pcapFile=None, filterStr=None):
 		super().__init__()
 		self.deviceName = deviceName
 		self.pcapFile = pcapFile
+		if filterStr:
+			self.filterStr = bytes(filterStr, 'ascii')
+		else:
+			self.filterStr = None
 		self.win_pcap = None
 	def run(self):
 		if self.pcapFile:
@@ -31,6 +35,10 @@ class Worker(QObject):
 			self.finished.emit()
 		else:
 			with WinPcap(self.deviceName) as capture:
+				if self.filterStr:
+					if not capture.compile(self.filterStr):
+						self.finished.emit()
+					capture.setfilter()
 				self.win_pcap = capture
 				capture.run(callback=self.packet_callback)
 	def packet_callback(self, win_pcap, param, header, pkt_data):
@@ -86,19 +94,23 @@ class SnifferUI(QWidget):#QMainWindow):
 		packageTable.itemClicked.connect(self.printDetailedInfo)
 		
 		self.packageTable = packageTable
-	def initFileInput(self):
+	'''def initFileInput(self):
 		fileInput = QLineEdit('')
 		#fileInput.resize(fileInput.sizeHint())
 		self.fileInput = fileInput
+	'''
+	def initFilterInput(self):
+		filterInput = QLineEdit('')
+		self.filterInput = filterInput
 	def initLayout(self):
 		layout = QGridLayout()
-		layout.setSpacing(10)
+		#layout.setSpacing(6)
 		
-		layout.addWidget(self.deviceSelector, 1, 1, 1, 3)
-		layout.addWidget(self.fileInput, 1, 4, 1, 1)
-		layout.addWidget(self.startButton, 1, 0, 1, 1)
-		layout.addWidget(self.packageTable, 3, 0, 5, 3)
-		layout.addWidget(self.detailedInfo, 3, 3, 5, 3)
+		layout.addWidget(self.startButton, 0, 0, 1, 1)
+		layout.addWidget(self.deviceSelector, 0, 1, 1, 3)
+		layout.addWidget(self.filterInput, 0, 4, 1, 2)
+		layout.addWidget(self.packageTable, 1, 0, 5, 3)
+		layout.addWidget(self.detailedInfo, 1, 3, 5, 3)
 		
 		self.layout = layout
 		self.setLayout(self.layout)
@@ -107,7 +119,8 @@ class SnifferUI(QWidget):#QMainWindow):
 		self.initDeviceSelector()
 		self.initStartButton()
 		self.initDetailedInfo()
-		self.initFileInput()
+		#self.initFileInput()
+		self.initFilterInput()
 		self.initPackageTable()
 		self.initLayout()
 
@@ -151,6 +164,7 @@ class SnifferUI(QWidget):#QMainWindow):
 		
 		self.packageTable.setSpan(curRow, 0, nLayer, 1);
 		self.packageTable.setItem(curRow, 0, QTableWidgetItem(str(self.pktCnt)))
+		#self.packageTable.setCurrentCell(curRow, 0)
 	
 	def receivePacket(self, pkt_data):
 		layers = parsePkt(pkt_data)
@@ -161,7 +175,8 @@ class SnifferUI(QWidget):#QMainWindow):
 			self.on = False
 			self.startButton.setText('Start')
 			self.deviceSelector.setEnabled(True)
-			self.fileInput.setReadOnly(False)
+			#self.fileInput.setReadOnly(False)
+			self.filterInput.setReadOnly(False)
 			self.worker.stop()
 			self.thread.quit()
 			self.thread.wait()
@@ -174,7 +189,8 @@ class SnifferUI(QWidget):#QMainWindow):
 			self.startButton.setText('Stop')
 			self.packageTable.setRowCount(0)
 			self.deviceSelector.setEnabled(False)
-			self.fileInput.setReadOnly(True)
+			#self.fileInput.setReadOnly(True)
+			self.filterInput.setReadOnly(False)
 			self.startSniff()
 	
 	def startSniff(self):
@@ -186,11 +202,15 @@ class SnifferUI(QWidget):#QMainWindow):
 		
 		self.thread = QThread()
 		
-		self.inputFile = self.fileInput.text()
-		if len(self.inputFile) == 0:
-			self.inputFile = None
+		#self.inputFile = self.fileInput.text()
+		#if len(self.inputFile) == 0:
+		#	self.inputFile = None
 		
-		self.worker = Worker(currentDevice, self.inputFile)
+		self.filterStr = self.filterInput.text()
+		if len(self.filterStr) == 0:
+			self.filterStr = None
+		
+		self.worker = Worker(currentDevice, pcapFile=None, filterStr=self.filterStr)
 		
 		self.worker.moveToThread(self.thread)
 		
